@@ -29,12 +29,19 @@ DEFAULT_REDIS_PASSWORD = None
 
 DEFAULT_REDIS_DB = 0
 
-def start(redis: Redis,
-          update: Update,
-          context: CallbackContext) -> str:
-    
+RETURN_INLINE_KEYBOARD = InlineKeyboardMarkup(
+    [[InlineKeyboardButton(text='Назад', callback_data='main_menu')]]
+)
+
+def main_menu(update: Update,
+              context: CallbackContext) -> str:
     token = elastic_management.get_token(env.str('CLIENT_ID'))
     products = elastic_management.get_products(token)
+    if update.callback_query:
+        context.bot.delete_message(
+            chat_id=update.effective_chat.id,
+            message_id=update.callback_query.message.message_id,
+        )
     buttons = list()
     for product in products['data']:
         buttons.append(
@@ -70,12 +77,16 @@ def handle_menu(update: Update,
 
             {product['data']['attributes']['price']['USD']['amount'] / 100} USD
             """
-        )
+        ),
+        reply_markup=RETURN_INLINE_KEYBOARD
     )
     context.bot.delete_message(
         chat_id=update.effective_chat.id,
         message_id=update.callback_query.message.message_id,
     )
+    return 'HANDLE_DESCRIPTION'
+
+
 
 if __name__ == '__main__':
     env = Env()
@@ -93,11 +104,14 @@ if __name__ == '__main__':
     updater.dispatcher.add_handler(
         ConversationHandler(
             entry_points = [
-                CommandHandler('start', partial(start, redis))
+                CommandHandler('start', main_menu)
             ],
             states = {
                 'HANDLE_MENU': [
                     CallbackQueryHandler(callback=handle_menu, pattern='product')
+                ],
+                'HANDLE_DESCRIPTION': [
+                    CallbackQueryHandler(callback=main_menu, pattern='main_menu')
                 ]
             },
             fallbacks=[]

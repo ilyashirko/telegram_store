@@ -173,7 +173,14 @@ def add_product_to_cart(token: str,
     response.raise_for_status()
     return response.json()
 
-
+def remove_product_from_cart(token: str, cart_id: str, item_id: str) -> dict:
+    url = f'https://api.moltin.com/v2/carts/{cart_id}/items/{item_id}'
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+    response = requests.delete(url, headers=headers)
+    response.raise_for_status()
+    return response.json()
 
 if __name__ == '__main__':
     CLIENT_ID = 'R25Ym1Xy9u0xBXdqGxFAmnSjgF3a5R7qLI0Vaoijrr'

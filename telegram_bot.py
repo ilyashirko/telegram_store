@@ -23,6 +23,7 @@ import elastic_management
 import json
 from textwrap import dedent
 import requests
+import re
 
 DEFAULT_REDIS_HOST = 'localhost'
 
@@ -114,7 +115,7 @@ def main_menu(redis: Redis,
     buttons.append(
         [
             InlineKeyboardButton(
-                text='👜 Моя корзина 👜',
+                text='🛒 Моя корзина 🛒',
                 callback_data='show_cart'
             )
         ]
@@ -155,7 +156,7 @@ def make_prod_inline(quantity: int = 1, product_id: str = 'null'):
                 InlineKeyboardButton(text='+', callback_data=f'increase_quantity:{product_id}')
             ],
             [InlineKeyboardButton(text='Добавить в корзину', callback_data=f'add_to_cart:{product_id}')],
-            [InlineKeyboardButton(text='👜 Моя корзина 👜', callback_data='show_cart')],
+            [InlineKeyboardButton(text='🛒 Моя корзина 🛒', callback_data='show_cart')],
             [InlineKeyboardButton(text='Назад', callback_data='main_menu')]
         ]
     )
@@ -317,7 +318,14 @@ def show_cart(redis: Redis, update: Update, context: CallbackContext) -> str:
         
         """
     )
-    keyboard_buttons = list()
+    keyboard_buttons = [
+        [
+            InlineKeyboardButton(
+                text='💰 ОФОРМИТЬ ЗАКАЗ 💰',
+                callback_data='make_order'
+            )
+        ]
+    ]
     for item in user_cart['included']['items']:
         cart_message += dedent(
             f"""
@@ -362,6 +370,32 @@ def show_cart(redis: Redis, update: Update, context: CallbackContext) -> str:
     return 'HANDLE_DESCRIPTION'
 
 
+def make_order(update: Update, context: CallbackContext) -> str:
+    context.bot.send_document(
+        chat_id=update.effective_chat.id,
+        document=open('privacy_policy.pdf', 'rb'),
+        filename='Политика конфиденциальности.pdf',
+        caption=dedent(
+            '''
+            Для оформления заказа напишите нам свою почту ✉️
+
+            Отправляя почту вы принимаете условия политики конфиденциальности
+            '''
+        )
+    )
+    return 'WAITING_EMAIL'
+
+
+def enter_email(redis: Redis, update: Update, context: CallbackContext) -> str:
+    if not re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", update.message.text):
+        context.bot.send_message(
+            update.effective_chat.id,
+            'Некорректная почта, попробуйте еще раз'
+        )
+        return 'WAITING_EMAIL'
+    
+
+
 if __name__ == '__main__':
     env = Env()
     env.read_env()
@@ -391,7 +425,11 @@ if __name__ == '__main__':
                     CallbackQueryHandler(callback=reduce_quantity, pattern='reduce_quantity'),
                     CallbackQueryHandler(callback=partial(add_to_cart, redis), pattern='add_to_cart'),
                     CallbackQueryHandler(callback=partial(remove_from_cart, redis), pattern='remove_from_cart'),
-                    CallbackQueryHandler(callback=partial(show_cart, redis), pattern='show_cart')
+                    CallbackQueryHandler(callback=partial(show_cart, redis), pattern='show_cart'),
+                    CallbackQueryHandler(callback=make_order, pattern='make_order')
+                ],
+                'WAITING_EMAIL': [
+                    CallbackQueryHandler(callback=partial(enter_email, redis), pattern='show_cart')
                 ]
             },
             fallbacks=[]

@@ -407,6 +407,8 @@ def enter_email(redis: Redis, update: Update, context: CallbackContext) -> str:
         update.effective_chat.id,
         'Ваш заказ оформлен!'
     )
+    redis.delete(f'{update.effective_chat.id}_cart_id')
+    redis.delete(f'{update.effective_chat.id}_cart_expires')
     return main_menu(redis, update, context)
 
 

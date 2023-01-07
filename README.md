@@ -19,8 +19,8 @@ REDIS_PORT=
 REDIS_PASSWORD=
 REDIS_DB=
 ```
-`TELEGRAM_BOT_TOKEN` [REQUIRED] you can get with [@BotFather](https://t.me/BotFather).  
-`CLIENT_ID` [REQUIRED] you can get in the settings of [elasticpath](https://euwest.cm.elasticpath.com/)
+`TELEGRAM_BOT_TOKEN` [REQUIRED] you can get with [@BotFather](https://t.me/BotFather)  
+`CLIENT_ID` [REQUIRED] you can get in the settings of [elasticpath](https://euwest.cm.elasticpath.com/)  
 `REDIS_HOST` [OPTIONAL] default = `localhost`  
 `REDIS_PORT` [OPTIONAL] default = 6379  
 `REDIS_PASSWORD` [OPTIONAL] default = None  

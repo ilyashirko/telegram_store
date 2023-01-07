@@ -1,7 +1,11 @@
+import requests
+import re
+
 from datetime import datetime
-from inspect import Attribute
-from multiprocessing.sharedctypes import Value
-from xmlrpc.client import ResponseError
+from functools import partial
+from textwrap import dedent
+
+from environs import Env
 from telegram import (
     Update,
     InlineKeyboardMarkup,
@@ -17,13 +21,9 @@ from telegram.ext import (
     ConversationHandler
 )
 from redis import Redis
-from environs import Env
-from functools import partial
+
 import elastic_management
-import json
-from textwrap import dedent
-import requests
-import re
+
 
 DEFAULT_REDIS_HOST = 'localhost'
 
@@ -37,6 +37,8 @@ SPARE_TOKEN_CART_TIME = 300
 # SPARE_TOKEN_CART_TIME is used to prevent token or cart death while current script processing.
 # 300 - random value ensuring that there is enough time for script processing
 
+CUSTOMER_ALREADY_EXISTS_ERROR_CODE = 409
+
 
 class ExpirationError(Exception):
     pass
@@ -49,11 +51,9 @@ class EntityNotFound(Exception):
 def get_or_create_elastic_token(redis: Redis) -> str:
     try:
         token = redis.get('ELASTIC_AUTH_TOKEN')
-        if not token:
-            raise EntityNotFound
-
         expired_at = redis.get('ELASTIC_AUTH_TOKEN_expires')
-        if not expired_at:
+
+        if token is None or expired_at is None:
             raise EntityNotFound
 
         if datetime.now().timestamp() + SPARE_TOKEN_CART_TIME > int(expired_at.decode('utf-8')):
@@ -73,13 +73,10 @@ def get_or_create_elastic_token(redis: Redis) -> str:
 def get_or_create_cart_id(redis: Redis, user_tg_id: int, elastic_token: str) -> tuple[str, bool]:
     try:
         user_cart_id = redis.get(f'{user_tg_id}_cart_id')
-        if not user_cart_id:
-            raise EntityNotFound
         expired_at = redis.get(f'{user_tg_id}_cart_expires')
-        if not expired_at:
-            # it can be if redis found actual card record but lose "expired" record.
-            # captured while testing
+        if user_cart_id is None or expired_at is None:
             raise EntityNotFound
+        
         if datetime.now().timestamp() + SPARE_TOKEN_CART_TIME > int(expired_at.decode('utf-8')):
             raise ExpirationError
         
@@ -111,7 +108,6 @@ def main_menu(redis: Redis,
             ]
         )
     
-    user_cart_id, is_new_cart = get_or_create_cart_id(redis, update.effective_chat.id, elastic_token)
     buttons.append(
         [
             InlineKeyboardButton(
@@ -135,8 +131,8 @@ def main_menu(redis: Redis,
 
 
 def get_current_quantity_in_cart(redis: Redis, user_tg_id: int, elastic_token: str, product_id) -> int:
-    user_cart_id, is_empty = get_or_create_cart_id(redis, user_tg_id, elastic_token)
-    if is_empty:
+    user_cart_id, is_new_cart = get_or_create_cart_id(redis, user_tg_id, elastic_token)
+    if is_new_cart:
         return 0
     user_cart = elastic_management.get_cart(elastic_token, user_cart_id)
     if not 'included' in user_cart:
@@ -147,7 +143,7 @@ def get_current_quantity_in_cart(redis: Redis, user_tg_id: int, elastic_token: s
     return 0
     
 
-def make_prod_inline(quantity: int = 1, product_id: str = 'null'):
+def make_prod_inline(product_id: str, quantity: int = 1):
     return InlineKeyboardMarkup(
         [
             [
@@ -178,7 +174,7 @@ def increase_quantity(redis: Redis,
         context.bot.edit_message_reply_markup(
             chat_id=update.effective_chat.id,
             message_id=update.callback_query.message.message_id,
-            reply_markup=make_prod_inline(quantity=(current_quantity + 1), product_id=product_id)
+            reply_markup=make_prod_inline(product_id=product_id, quantity=(current_quantity + 1))
         )
     else:
         message = str()
@@ -203,7 +199,7 @@ def reduce_quantity(update: Update,
         context.bot.edit_message_reply_markup(
             chat_id=update.effective_chat.id,
             message_id=update.callback_query.message.message_id,
-            reply_markup=make_prod_inline(quantity=(current_quantity - 1), product_id=product_id)
+            reply_markup=make_prod_inline(product_id=product_id, quantity=(current_quantity - 1))
         )
     return 'HANDLE_DESCRIPTION'
 
@@ -217,7 +213,7 @@ def add_to_cart(redis: Redis,
     
     elastic_token = get_or_create_elastic_token(redis)
     
-    user_cart_id, is_empty = get_or_create_cart_id(redis, update.effective_chat.id, elastic_token)
+    user_cart_id, _ = get_or_create_cart_id(redis, update.effective_chat.id, elastic_token)
     
     try:
         elastic_management.add_product_to_cart(elastic_token, product_id, user_cart_id, quantity)
@@ -260,12 +256,15 @@ def remove_from_cart(redis: Redis,
                      context: CallbackContext) -> str:
     _, item_id = update.callback_query.data.split(':')
     elastic_token = get_or_create_elastic_token(redis)
-    user_cart_id, is_empty = get_or_create_cart_id(redis, update.effective_chat.id, elastic_token)
-    elastic_management.remove_product_from_cart(elastic_token, user_cart_id, item_id)
-    context.bot.send_message(
-        update.effective_chat.id,
-        'Товар успешно удален из корзины.'
-    )
+    user_cart_id, _ = get_or_create_cart_id(redis, update.effective_chat.id, elastic_token)
+    try:
+        elastic_management.remove_product_from_cart(elastic_token, user_cart_id, item_id)
+        context.bot.send_message(
+            update.effective_chat.id,
+            'Товар успешно удален из корзины.'
+        )
+    except requests.exceptions.HTTPError:
+        pass
     return show_cart(redis, update, context)
 
 
@@ -299,6 +298,7 @@ def show_product(update: Update,
         message_id=update.callback_query.message.message_id,
     )
     return 'HANDLE_DESCRIPTION'
+
 
 def show_cart(redis: Redis, update: Update, context: CallbackContext) -> str:
     elastic_token = get_or_create_elastic_token(redis)
@@ -393,7 +393,21 @@ def enter_email(redis: Redis, update: Update, context: CallbackContext) -> str:
             'Некорректная почта, попробуйте еще раз'
         )
         return 'WAITING_EMAIL'
-    
+    elastic_token = get_or_create_elastic_token(redis)
+    try:
+        customer = elastic_management.create_customer(
+            elastic_token,
+            update.effective_chat.first_name or update.effective_chat.username or str(update.effective_chat.id),
+            update.message.text
+        )
+    except requests.exceptions.HTTPError as error:
+        if error.response.status_code == CUSTOMER_ALREADY_EXISTS_ERROR_CODE:
+            pass
+    context.bot.send_message(
+        update.effective_chat.id,
+        'Ваш заказ оформлен!'
+    )
+    return main_menu(redis, update, context)
 
 
 if __name__ == '__main__':
@@ -429,7 +443,7 @@ if __name__ == '__main__':
                     CallbackQueryHandler(callback=make_order, pattern='make_order')
                 ],
                 'WAITING_EMAIL': [
-                    CallbackQueryHandler(callback=partial(enter_email, redis), pattern='show_cart')
+                    MessageHandler(filters=Filters.text, callback=partial(enter_email, redis))
                 ]
             },
             fallbacks=[]

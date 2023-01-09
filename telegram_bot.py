@@ -78,17 +78,16 @@ def main_menu(redis: Redis,
     elastic_token = get_or_create_elastic_token(redis)
     products = elastic_management.get_products(elastic_token)
     
-    buttons = list()
-    for product in products['data']:
-        buttons.append(
-            [
-                InlineKeyboardButton(
-                    text=product['attributes']['name'],
-                    callback_data=f'product:{product["id"]}'
-                )
-            ]
-        )
-    
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text=product['attributes']['name'],
+                callback_data=f'product:{product["id"]}'
+            )
+        ]
+        for product in products['data']
+    ]
+
     buttons.append(
         [
             InlineKeyboardButton(

@@ -40,28 +40,15 @@ SPARE_TOKEN_CART_TIME = 300
 CUSTOMER_ALREADY_EXISTS_ERROR_CODE = 409
 
 
-class ExpirationError(Exception):
-    pass
-
-
-class EntityNotFound(Exception):
-    pass
-
-
 def get_or_create_elastic_token(redis: Redis) -> str:
-    try:
-        token = redis.get('ELASTIC_AUTH_TOKEN')
-        expired_at = redis.get('ELASTIC_AUTH_TOKEN_expires')
+    token = redis.get('ELASTIC_AUTH_TOKEN')
+    expired_at = redis.get('ELASTIC_AUTH_TOKEN_expires')
+    
+    if token is None or \
+       expired_at is None or \
+       datetime.now().timestamp() + SPARE_TOKEN_CART_TIME > int(expired_at):
 
-        if token is None or expired_at is None:
-            raise EntityNotFound
-
-        if datetime.now().timestamp() + SPARE_TOKEN_CART_TIME > int(expired_at):
-            raise ExpirationError
-
-    except (EntityNotFound, ExpirationError):
         token, expired_at = elastic_management.get_token(env.str('CLIENT_ID'))
-        
         redis.set('ELASTIC_AUTH_TOKEN', token)
         redis.set('ELASTIC_AUTH_TOKEN_expires', expired_at)
         
@@ -69,24 +56,20 @@ def get_or_create_elastic_token(redis: Redis) -> str:
 
 
 def get_or_create_cart_id(redis: Redis, user_tg_id: int, elastic_token: str) -> tuple[str, bool]:
-    try:
-        user_cart_id = redis.get(f'{user_tg_id}_cart_id')
-        expired_at = redis.get(f'{user_tg_id}_cart_expires')
-        if user_cart_id is None or expired_at is None:
-            raise EntityNotFound
-        
-        if datetime.now().timestamp() + SPARE_TOKEN_CART_TIME > int(expired_at):
-            raise ExpirationError
-        
-        return user_cart_id, False
+    user_cart_id = redis.get(f'{user_tg_id}_cart_id')
+    expired_at = redis.get(f'{user_tg_id}_cart_expires')
+    
+    if user_cart_id is None or \
+       expired_at is None or \
+       datetime.now().timestamp() + SPARE_TOKEN_CART_TIME > int(expired_at):
 
-    except (EntityNotFound, ExpirationError):
         user_cart_id, expired_at = elastic_management.create_cart(elastic_token, str(user_tg_id))
-        
         redis.set(f'{user_tg_id}_cart_id', user_cart_id)
         redis.set(f'{user_tg_id}_cart_expires', expired_at)
-
         return user_cart_id, True
+
+    return user_cart_id, False
+        
 
 
 def main_menu(redis: Redis,

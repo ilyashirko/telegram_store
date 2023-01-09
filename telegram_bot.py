@@ -56,10 +56,8 @@ def get_or_create_elastic_token(redis: Redis) -> str:
         if token is None or expired_at is None:
             raise EntityNotFound
 
-        if datetime.now().timestamp() + SPARE_TOKEN_CART_TIME > int(expired_at.decode('utf-8')):
+        if datetime.now().timestamp() + SPARE_TOKEN_CART_TIME > int(expired_at):
             raise ExpirationError
-
-        return token.decode('utf-8')
 
     except (EntityNotFound, ExpirationError):
         token, expired_at = elastic_management.get_token(env.str('CLIENT_ID'))
@@ -67,7 +65,7 @@ def get_or_create_elastic_token(redis: Redis) -> str:
         redis.set('ELASTIC_AUTH_TOKEN', token)
         redis.set('ELASTIC_AUTH_TOKEN_expires', expired_at)
         
-        return token
+    return token
 
 
 def get_or_create_cart_id(redis: Redis, user_tg_id: int, elastic_token: str) -> tuple[str, bool]:
@@ -77,10 +75,10 @@ def get_or_create_cart_id(redis: Redis, user_tg_id: int, elastic_token: str) -> 
         if user_cart_id is None or expired_at is None:
             raise EntityNotFound
         
-        if datetime.now().timestamp() + SPARE_TOKEN_CART_TIME > int(expired_at.decode('utf-8')):
+        if datetime.now().timestamp() + SPARE_TOKEN_CART_TIME > int(expired_at):
             raise ExpirationError
         
-        return user_cart_id.decode('utf-8'), False
+        return user_cart_id, False
 
     except (EntityNotFound, ExpirationError):
         user_cart_id, expired_at = elastic_management.create_cart(elastic_token, str(user_tg_id))
@@ -420,7 +418,8 @@ if __name__ == '__main__':
         host=env.str('REDIS_HOST', DEFAULT_REDIS_HOST),
         port=env.int('REDIS_PORT', DEFAULT_REDIS_PORT),
         password=env.str('REDIS_PASSWORD', DEFAULT_REDIS_PASSWORD),
-        db=env.int('REDIS_DB', DEFAULT_REDIS_DB)
+        db=env.int('REDIS_DB', DEFAULT_REDIS_DB),
+        decode_responses=True
     )
 
     updater = Updater(token=env.str('TELEGRAM_BOT_TOKEN'), use_context=True)

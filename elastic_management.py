@@ -56,14 +56,14 @@ def create_customer(token: str,
     headers = {
         "Authorization": f"Bearer {token}",
     }
-    json_data = {
+    post_data = {
         "data": {
             "type": "customer",
             "name": name,
             "email": email,
         }
     }
-    response = requests.post(url, headers=headers, json=json_data)
+    response = requests.post(url, headers=headers, json=post_data)
     response.raise_for_status()
     return response.json()
 
@@ -89,16 +89,18 @@ def create_cart(token: str,
         "Authorization": f"Bearer {token}",
         'Content-Type': 'application/json',
     }
-    json_data = {
+    post_data = {
         "data": {
             "name": name,
         }
     }
-    response = requests.post(url, headers=headers, json=json_data)
+    response = requests.post(url, headers=headers, json=post_data)
     response.raise_for_status()
     cart_summary = response.json()['data']
+
     expired_at = cart_summary['meta']['timestamps']['expires_at']
     datetime_obj = datetime.fromisoformat(expired_at + '+03:00')
+
     return cart_summary['id'], int(datetime_obj.timestamp())
 
 
@@ -111,14 +113,14 @@ def add_product_to_cart(token: str,
         "Authorization": f"Bearer {token}",
         'Content-Type': 'application/json',
     }
-    json_data = {
+    post_data = {
         "data": {
             "id": prod_id,
             "type": 'cart_item',
             'quantity': quantity
         }
     }
-    response = requests.post(url, headers=headers, json=json_data)
+    response = requests.post(url, headers=headers, json=post_data)
     response.raise_for_status()
     return response.json()
 

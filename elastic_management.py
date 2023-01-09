@@ -82,11 +82,6 @@ def get_cart(token: str,
     return response.json()
 
 
-def convert_api_date_to_timestamp(source_date: str) -> int:
-    datetime_obj = datetime.fromisoformat(source_date + '+03:00')
-    return int(datetime_obj.timestamp())
-
-
 def create_cart(token: str,
                 name: str = 'new_cart') -> tuple:
     url = 'https://api.moltin.com/v2/carts'
@@ -103,7 +98,8 @@ def create_cart(token: str,
     response.raise_for_status()
     cart_summary = response.json()['data']
     expired_at = cart_summary['meta']['timestamps']['expires_at']
-    return cart_summary['id'], convert_api_date_to_timestamp(expired_at)
+    datetime_obj = datetime.fromisoformat(expired_at + '+03:00')
+    return cart_summary['id'], int(datetime_obj.timestamp())
 
 
 def add_product_to_cart(token: str,
